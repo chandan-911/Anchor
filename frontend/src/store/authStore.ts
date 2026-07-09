@@ -72,7 +72,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await get().fetchProfile();
       return response.data;
     } catch (err: any) {
-      const errMsg = err.response?.data?.username?.[0] || err.response?.data?.email?.[0] || 'Registration failed';
+      const data = err.response?.data;
+      const errMsg = data?.username?.[0] || data?.email?.[0] || data?.password?.[0] || data?.non_field_errors?.[0] || 'Registration failed';
       set({ error: errMsg, isLoading: false });
       throw err;
     }
