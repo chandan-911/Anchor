@@ -1,0 +1,19 @@
+from django.contrib import admin
+from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/auth/', include('authentication.urls')),
+    path('api/journal/', include('journal.urls')),
+    path('api/chat/', include('chat.urls')),
+    path('api/swot/', include('swot.urls')),
+    path('api/opportunities/', include('opportunities.urls')),
+    path('api/decisions/', include('decisions.urls')),
+    path('api/analytics/', include('analytics.urls')),
+    path('api/streaks/', include('streaks.urls')),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

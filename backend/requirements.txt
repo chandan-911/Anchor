@@ -1,0 +1,11 @@
+django>=5.0
+djangorestframework>=3.14.0
+djangorestframework-simplejwt>=5.3.1
+django-cors-headers>=4.3.1
+pymysql>=1.1.0
+google-generativeai>=0.4.0
+numpy>=1.24.0
+cryptography>=41.0.0
+python-dotenv>=1.0.0
+celery>=5.3.6
+redis>=5.0.1

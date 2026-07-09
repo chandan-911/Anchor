@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: anchor_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "Chandan@2004"
+      MYSQL_DATABASE: "Alert_Enterprise_Project"
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: anchor_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: anchor_backend
+    restart: always
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=django-insecure-anchor-platform-key-2026
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,backend
+      - DB_NAME=Alert_Enterprise_Project
+      - DB_USER=root
+      - DB_PASSWORD=Chandan@2004
+      - DB_HOST=db
+      - DB_PORT=3306
+      - GEMINI_API_KEY=AIzaSyC7yjf14lEcLF1IS2AddLYnLL5HMj4XkpU
+    depends_on:
+      - db
+      - redis
+
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: anchor_celery
+    restart: always
+    command: celery -A anchor_project worker -l info
+    volumes:
+      - ./backend:/app
+    environment:
+      - DB_NAME=Alert_Enterprise_Project
+      - DB_USER=root
+      - DB_PASSWORD=Chandan@2004
+      - DB_HOST=db
+      - DB_PORT=3306
+      - GEMINI_API_KEY=AIzaSyC7yjf14lEcLF1IS2AddLYnLL5HMj4XkpU
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    image: node:20-alpine
+    container_name: anchor_frontend
+    restart: always
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
