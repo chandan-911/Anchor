@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { Mic, MicOff, Volume2, VolumeX, Square, Play, Pause, Sparkles, User, RefreshCw, Trash2 } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Square, Play, Pause, Sparkles, User, RefreshCw, LogOut } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
 export default function VoiceAssistant() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { profile, fetchProfile } = useAuthStore();
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -13,6 +15,7 @@ export default function VoiceAssistant() {
   const [aiSpeechResponse, setAiSpeechResponse] = useState('');
   const [recognitionInstance, setRecognitionInstance] = useState<any>(null);
   const [voiceVolume, setVoiceVolume] = useState(0.8);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [activeVoiceConvId, setActiveVoiceConvId] = useState<number | null>(null);
   const [selectedLang, setSelectedLang] = useState('en-US');
   const [micPermission, setMicPermission] = useState<'granted' | 'prompt' | 'denied' | 'checking'>('checking');
@@ -184,6 +187,7 @@ export default function VoiceAssistant() {
       }
       playChime('stop');
       setIsListening(false);
+      setIsTranscribing(false);
     } else {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -193,33 +197,53 @@ export default function VoiceAssistant() {
 
       // If AI is speaking, stop it
       if (isSpeaking) {
-        window.speechSynthesis.cancel();
-        setIsSpeaking(false);
+        stopPlayback();
       }
 
       const rec = new SpeechRecognition();
       rec.continuous = false;
-      rec.interimResults = false;
+      rec.interimResults = true;
       rec.lang = selectedLang;
 
       rec.onstart = () => {
         setSpokenText('');
         setIsListening(true);
+        setIsTranscribing(false);
       };
 
       rec.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setSpokenText(transcript);
-        speakToAIMutation.mutate(transcript);
+        let interimTranscript = '';
+        let finalTranscript = '';
+        setIsTranscribing(true);
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        
+        if (interimTranscript) {
+          setSpokenText(interimTranscript);
+        }
+        
+        if (finalTranscript) {
+          setSpokenText(finalTranscript);
+          setIsTranscribing(false);
+          speakToAIMutation.mutate(finalTranscript);
+        }
       };
 
       rec.onerror = (e: any) => {
         console.error("STT Error", e);
         setIsListening(false);
+        setIsTranscribing(false);
       };
 
       rec.onend = () => {
         setIsListening(false);
+        setIsTranscribing(false);
       };
 
       rec.start();
@@ -230,28 +254,45 @@ export default function VoiceAssistant() {
 
   const stopPlayback = () => {
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      try {
+        // Resume before cancel fixes a well-known Chrome/Safari SpeechSynthesis freeze bug
+        window.speechSynthesis.resume();
+        window.speechSynthesis.cancel();
+      } catch (err) {
+        console.error("Failed to cancel speech synthesis", err);
+      }
       setIsSpeaking(false);
     }
   };
 
-  const handleDeleteSession = async () => {
+  const handleEndSession = async () => {
     if (!activeVoiceConvId) return;
-    if (!confirm("Are you sure you want to delete this voice session and clear the transcript?")) return;
     
-    try {
-      await api.delete(`/chat/conversations/${activeVoiceConvId}/`);
-      setSpokenText('');
-      setAiSpeechResponse('');
-      stopPlayback();
-      
-      // Initialize a new session
-      const res = await api.post('/chat/conversations/', { title: 'Voice Session' });
-      setActiveVoiceConvId(res.data.id);
-      alert("Voice session cleared and reset successfully!");
-    } catch (e) {
-      console.error("Failed to delete voice session", e);
-      alert("Failed to reset session.");
+    // Stop listening and speaking first
+    stopPlayback();
+    if (isListening && recognitionInstance) {
+      recognitionInstance.stop();
+      setIsListening(false);
+      setIsTranscribing(false);
+    }
+
+    const saveSession = confirm(
+      "Would you like to save this voice session in your conversation history?\n\n" +
+      "Click 'OK' to save it to your history, or click 'Cancel' to discard it."
+    );
+
+    if (saveSession) {
+      alert("Session saved successfully!");
+      navigate('/chat');
+    } else {
+      try {
+        await api.delete(`/chat/conversations/${activeVoiceConvId}/`);
+        alert("Session discarded and cleared.");
+        navigate('/dashboard');
+      } catch (e) {
+        console.error("Failed to delete voice session", e);
+        navigate('/dashboard');
+      }
     }
   };
 
@@ -405,10 +446,10 @@ export default function VoiceAssistant() {
                 <Square className="w-3 h-3 text-rose-500 fill-rose-500" /> Stop Speech
               </button>
               <button 
-                onClick={handleDeleteSession}
-                className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-rose-950/20 border border-rose-900/30 hover:bg-rose-900/20 text-[10px] font-bold text-rose-400 flex items-center justify-center gap-1.5 transition-all"
+                onClick={handleEndSession}
+                className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-indigo-950/20 border border-indigo-900/30 hover:bg-indigo-900/20 text-[10px] font-bold text-indigo-400 flex items-center justify-center gap-1.5 transition-all"
               >
-                <Trash2 className="w-3.5 h-3.5 text-rose-400" /> Clear Session
+                <LogOut className="w-3.5 h-3.5 text-indigo-400" /> End Session
               </button>
             </div>
           </div>
@@ -418,9 +459,20 @@ export default function VoiceAssistant() {
             {spokenText && (
               <div className="space-y-1 text-left">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                  <User className="w-3.5 h-3.5" /> You said:
+                  <User className="w-3.5 h-3.5" /> 
+                  {isTranscribing ? (
+                    <span className="text-emerald-400 flex items-center gap-1.5 font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> Transcribing...
+                    </span>
+                  ) : (
+                    "You said:"
+                  )}
                 </span>
-                <p className="text-xs text-slate-350 bg-slate-900/50 p-3 rounded-xl border border-slate-850 italic">
+                <p className={`text-xs p-3 rounded-xl border italic transition-all ${
+                  isTranscribing 
+                    ? 'text-slate-400 bg-slate-900/30 border-slate-900/40' 
+                    : 'text-slate-350 bg-slate-900/50 border-slate-850'
+                }`}>
                   "{spokenText}"
                 </p>
               </div>
