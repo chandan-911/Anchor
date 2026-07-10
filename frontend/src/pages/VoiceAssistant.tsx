@@ -159,19 +159,34 @@ export default function VoiceAssistant() {
     return null;
   };
 
+  // Helper to detect response language script (Hindi vs Punjabi vs English)
+  const detectScriptLanguage = (text: string): string => {
+    // Gurmukhi characters (Punjabi)
+    if (/[\u0A00-\u0A7F]/.test(text)) {
+      return 'pa-IN';
+    }
+    // Devanagari characters (Hindi)
+    if (/[\u0900-\u097F]/.test(text)) {
+      return 'hi-IN';
+    }
+    return 'en-US';
+  };
+
   // Speak AI responses
-  const speakResponse = (text: string) => {
+  const speakResponse = (text: string, forceLang?: string) => {
     if (!('speechSynthesis' in window)) return;
 
     window.speechSynthesis.cancel(); // Halt previous speech
     setIsSpeaking(true);
     setVoiceState('speaking');
 
+    const targetLang = forceLang || detectScriptLanguage(text);
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.volume = volume;
-    utterance.lang = selectedLanguage.speechLang;
+    utterance.lang = targetLang;
 
-    const matchedVoice = getBestVoice(selectedLanguage.speechLang);
+    const matchedVoice = getBestVoice(targetLang);
     if (matchedVoice) {
       utterance.voice = matchedVoice;
     }
