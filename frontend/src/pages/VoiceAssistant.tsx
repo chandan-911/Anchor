@@ -172,21 +172,16 @@ export default function VoiceAssistant() {
     return 'en-US';
   };
 
-  // Speak AI responses
-  const speakResponse = (text: string, forceLang?: string) => {
+  // Local fallback SpeechSynthesis
+  const speakLocalSpeech = (text: string, langCode: string) => {
     if (!('speechSynthesis' in window)) return;
-
-    window.speechSynthesis.cancel(); // Halt previous speech
-    setIsSpeaking(true);
-    setVoiceState('speaking');
-
-    const targetLang = forceLang || detectScriptLanguage(text);
-
+    
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.volume = volume;
-    utterance.lang = targetLang;
+    utterance.lang = langCode;
 
-    const matchedVoice = getBestVoice(targetLang);
+    const matchedVoice = getBestVoice(langCode);
     if (matchedVoice) {
       utterance.voice = matchedVoice;
     }
@@ -197,25 +192,76 @@ export default function VoiceAssistant() {
     };
 
     utterance.onerror = (e) => {
-      console.error("Speech Synthesis Error", e);
+      console.error("Local Speech Synthesis Error", e);
       setIsSpeaking(false);
       setVoiceState('idle');
     };
 
-    // Garbage collection protection
     (window as any)._activeUtterance = utterance;
     window.speechSynthesis.speak(utterance);
   };
 
+  // Speak AI responses (using Google Translate high-fidelity TTS, fallback to browser SpeechSynthesis)
+  const speakResponse = (text: string, forceLang?: string) => {
+    // 1. Stop any active playback
+    stopPlayback();
+
+    setIsSpeaking(true);
+    setVoiceState('speaking');
+
+    const targetLang = forceLang || detectScriptLanguage(text);
+    const baseLang = targetLang.split('-')[0]; // e.g. "pa" or "hi"
+
+    try {
+      const cleanText = text.replace(/[*#_\-\[\]\(\)]/g, '').trim(); // Strip minor symbol remnants
+      const encodedText = encodeURIComponent(cleanText);
+      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${baseLang}&client=tw-ob&q=${encodedText}`;
+
+      const audio = new Audio(googleTtsUrl);
+      audio.volume = volume;
+
+      audio.onended = () => {
+        setIsSpeaking(false);
+        setVoiceState('idle');
+      };
+
+      audio.onerror = (e) => {
+        console.warn("Google TTS failed to load, falling back to local speech synthesis", e);
+        speakLocalSpeech(cleanText, targetLang);
+      };
+
+      (window as any)._activeAudio = audio;
+      audio.play().catch(playErr => {
+        console.warn("Audio play blocked, falling back to local speech synthesis", playErr);
+        speakLocalSpeech(cleanText, targetLang);
+      });
+    } catch (err) {
+      console.warn("Failed to initialize Google TTS, falling back to local speech", err);
+      speakLocalSpeech(text, targetLang);
+    }
+  };
+
   const stopPlayback = () => {
+    // 1. Cancel local SpeechSynthesis
     if ('speechSynthesis' in window) {
       try {
         window.speechSynthesis.resume();
         window.speechSynthesis.cancel();
       } catch (e) {
-        console.error("Speech cancellation error", e);
+        console.error("Local Speech cancellation error", e);
       }
     }
+
+    // 2. Pause and kill Google TTS audio
+    if ((window as any)._activeAudio) {
+      try {
+        (window as any)._activeAudio.pause();
+        (window as any)._activeAudio = null;
+      } catch (e) {
+        console.error("Audio pause error", e);
+      }
+    }
+
     setIsSpeaking(false);
     setVoiceState('idle');
   };
