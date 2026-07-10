@@ -388,34 +388,39 @@ export default function VoiceAssistant() {
             </select>
           </div>
 
-          {/* Pulse Visualizer */}
-          <div className="relative flex items-center justify-center h-40 w-40 md:h-48 md:w-48">
-            <div className={`absolute inset-0 rounded-full transition-all duration-500 ${
+          {/* Large Clickable Pulse Visualizer Button */}
+          <button
+            onClick={toggleListening}
+            disabled={isTranscribing}
+            className="relative flex items-center justify-center h-40 w-40 md:h-48 md:w-48 cursor-pointer focus:outline-none group bg-transparent border-none outline-none select-none"
+            title="Toggle Mic"
+          >
+            {/* Outer Decorative Wave 1 */}
+            <div className={`absolute inset-0 rounded-full transition-all duration-500 pointer-events-none ${
               voiceStatus === 'listening' ? 'bg-emerald-500/15 scale-125 animate-ping' :
               voiceStatus === 'thinking' ? 'bg-amber-500/15 scale-110 animate-pulse' :
               voiceStatus === 'speaking' ? 'bg-violet-500/15 scale-125 animate-ping' :
-              'bg-indigo-500/10 scale-75'
+              'bg-indigo-500/10 scale-75 group-hover:scale-80'
             }`} />
-            <div className={`absolute inset-4 rounded-full transition-all duration-700 ${
+
+            {/* Inner Decorative Wave 2 */}
+            <div className={`absolute inset-4 rounded-full transition-all duration-700 pointer-events-none ${
               voiceStatus === 'listening' ? 'bg-emerald-500/20 scale-110 animate-pulse' :
               voiceStatus === 'thinking' ? 'bg-amber-500/20 scale-105 animate-pulse' :
               voiceStatus === 'speaking' ? 'bg-violet-500/20 scale-110 animate-pulse' :
-              'bg-indigo-500/15 scale-90'
+              'bg-indigo-500/15 scale-90 group-hover:scale-95'
             }`} />
             
-            <button
-              onClick={toggleListening}
-              disabled={isTranscribing}
-              className={`h-20 w-20 md:h-24 md:w-24 rounded-full flex items-center justify-center text-white transition-all shadow-xl ${
-                voiceStatus === 'listening' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30' :
-                voiceStatus === 'thinking' ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30' :
-                voiceStatus === 'speaking' ? 'bg-violet-600 hover:bg-violet-500 shadow-violet-600/30' :
-                'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
-              }`}
-            >
+            {/* Central Mic Icon Button Circle */}
+            <div className={`h-20 w-20 md:h-24 md:w-24 rounded-full flex items-center justify-center text-white transition-all shadow-xl z-10 ${
+              voiceStatus === 'listening' ? 'bg-emerald-600 group-hover:bg-emerald-500 shadow-emerald-600/30' :
+              voiceStatus === 'thinking' ? 'bg-amber-600 group-hover:bg-amber-500 shadow-amber-600/30' :
+              voiceStatus === 'speaking' ? 'bg-violet-600 group-hover:bg-violet-500 shadow-violet-600/30' :
+              'bg-indigo-600 group-hover:bg-indigo-500 shadow-indigo-600/30 group-hover:scale-105'
+            }`}>
               {isListening ? <MicOff className="w-6 h-6 md:w-8 md:h-8" /> : <Mic className="w-6 h-6 md:w-8 md:h-8" />}
-            </button>
-          </div>
+            </div>
+          </button>
 
           <div className="text-center space-y-2">
             <div className={`text-[10px] md:text-xs uppercase tracking-wider font-bold animate-pulse ${
