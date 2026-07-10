@@ -174,6 +174,7 @@ export default function Profile() {
                 >
                   <option value="en">English</option>
                   <option value="hi">Hindi</option>
+                  <option value="pa">Punjabi</option>
                   <option value="es">Spanish</option>
                   <option value="fr">French</option>
                   <option value="ja">Japanese</option>
