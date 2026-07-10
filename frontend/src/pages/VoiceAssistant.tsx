@@ -210,11 +210,30 @@ export default function VoiceAssistant() {
     setVoiceState('speaking');
 
     const targetLang = forceLang || detectScriptLanguage(text);
-    const baseLang = targetLang.split('-')[0]; // e.g. "pa" or "hi"
+    
+    // Gurmukhi to Devanagari translation for clean audio speaking
+    const convertGurmukhiToDevanagari = (val: string): string => {
+      return val.split('').map(char => {
+        const code = char.charCodeAt(0);
+        if (code >= 0x0A00 && code <= 0x0A7F) {
+          return String.fromCharCode(code - 0x0100);
+        }
+        return char;
+      }).join('');
+    };
+
+    let baseLang = targetLang.split('-')[0];
+    let speakText = text.replace(/[*#_\-\[\]\(\)]/g, '').trim();
+
+    // Workaround: Since public TTS endpoints do not support 'pa' (Punjabi), 
+    // convert Gurmukhi script to phonetic Devanagari (Hindi) and speak it using Hindi TTS.
+    if (baseLang === 'pa') {
+      baseLang = 'hi';
+      speakText = convertGurmukhiToDevanagari(speakText);
+    }
 
     try {
-      const cleanText = text.replace(/[*#_\-\[\]\(\)]/g, '').trim(); // Strip minor symbol remnants
-      const encodedText = encodeURIComponent(cleanText);
+      const encodedText = encodeURIComponent(speakText);
       const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${baseLang}&client=tw-ob&q=${encodedText}`;
 
       const audio = new Audio(googleTtsUrl);
@@ -227,17 +246,17 @@ export default function VoiceAssistant() {
 
       audio.onerror = (e) => {
         console.warn("Google TTS failed to load, falling back to local speech synthesis", e);
-        speakLocalSpeech(cleanText, targetLang);
+        speakLocalSpeech(speakText, baseLang === 'hi' ? 'hi-IN' : targetLang);
       };
 
       (window as any)._activeAudio = audio;
       audio.play().catch(playErr => {
         console.warn("Audio play blocked, falling back to local speech synthesis", playErr);
-        speakLocalSpeech(cleanText, targetLang);
+        speakLocalSpeech(speakText, baseLang === 'hi' ? 'hi-IN' : targetLang);
       });
     } catch (err) {
       console.warn("Failed to initialize Google TTS, falling back to local speech", err);
-      speakLocalSpeech(text, targetLang);
+      speakLocalSpeech(speakText, baseLang === 'hi' ? 'hi-IN' : targetLang);
     }
   };
 
