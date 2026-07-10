@@ -176,11 +176,22 @@ export default function VoiceAssistant() {
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
     
+    // Hack to prevent garbage collection from silently swallowing onstart/onend events
+    (window as any)._activeUtterance = utterance;
+    
     window.speechSynthesis.speak(utterance);
   };
 
   // Browser Speech-to-Text (STT)
-  const toggleListening = () => {
+  const toggleListening = async () => {
+    if (!isListening && micPermission !== 'granted') {
+      const granted = await requestMicPermission();
+      if (!granted) {
+        alert("Microphone access is required to speak to the coach.");
+        return;
+      }
+    }
+
     if (isListening) {
       if (recognitionInstance) {
         recognitionInstance.stop();
@@ -239,6 +250,9 @@ export default function VoiceAssistant() {
         console.error("STT Error", e);
         setIsListening(false);
         setIsTranscribing(false);
+        if (e.error === 'not-allowed') {
+          setMicPermission('denied');
+        }
       };
 
       rec.onend = () => {
