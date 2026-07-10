@@ -23,4 +23,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project files
 COPY . /app/
 
-CMD ["sh", "-c", "python manage.py migrate && python -m gunicorn anchor_project.wsgi:application --bind 0.0.0.0:$PORT"]
+CMD ["sh", "-c", "python manage.py migrate && python reset_chandan_pwd.py && python -m gunicorn anchor_project.wsgi:application --bind 0.0.0.0:$PORT"]
