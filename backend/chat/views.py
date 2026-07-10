@@ -230,11 +230,14 @@ class VoiceTranscribeView(APIView):
                     elif 'mp4' in raw_mime: filename = 'voice.mp4'
                     
                     files = {
-                        "file": (filename, audio_bytes, raw_mime),
-                        "model": (None, "whisper-large-v3"),
-                        "language": (None, lang_hint)
+                        "file": (filename, audio_bytes, raw_mime)
                     }
-                    res = requests.post(url, headers=headers, files=files, timeout=12)
+                    data = {
+                        "model": "whisper-large-v3",
+                        "language": lang_hint,
+                        "prompt": "ਪੰਜਾਬੀ, Gurmukhi script transcription. मैं हिंदी बोल रहा हूँ, देवनागरी, Hindi transcription."
+                    }
+                    res = requests.post(url, headers=headers, files=files, data=data, timeout=12)
                     if res.status_code == 200:
                         transcription = res.json().get('text', '').strip()
                         print(f"[Voice Backend] Groq Whisper transcription success: {transcription}")
