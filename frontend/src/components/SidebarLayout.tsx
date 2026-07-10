@@ -218,5 +218,16 @@ export default function SidebarLayout({ children }: SidebarLayoutProps) {
         {children}
       </main>
     </div>
+      {/* Mobile Floating Action Button (FAB) for Voice Coach */}
+      {location.pathname !== '/voice' && (
+        <Link
+          to="/voice"
+          className="md:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/40 active:scale-95 transition-all z-40"
+          title="Talk to Voice Coach"
+        >
+          <Mic className="w-5.5 h-5.5 animate-pulse text-indigo-100" />
+        </Link>
+      )}
+    </div>
   );
 }

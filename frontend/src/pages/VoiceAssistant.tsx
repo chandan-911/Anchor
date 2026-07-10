@@ -81,45 +81,6 @@ export default function VoiceAssistant() {
     }
   };
 
-  const playChime = async (type: 'start' | 'stop') => {
-    try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContext) return;
-      const ctx = new AudioContext();
-      
-      // Crucial for iOS Safari support
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      if (type === 'start') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.2);
-      } else {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(600, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.2);
-      }
-    } catch (err) {
-      console.error("Failed to play chime", err);
-    }
-  };
-
   // Initialize a new conversation for voice session automatically
   useEffect(() => {
     const initVoiceSession = async () => {
@@ -188,7 +149,6 @@ export default function VoiceAssistant() {
       if (recognitionInstance) {
         recognitionInstance.stop();
       }
-      playChime('stop');
       setIsListening(false);
       setIsTranscribing(false);
     } else {
@@ -254,7 +214,6 @@ export default function VoiceAssistant() {
 
       try {
         rec.start();
-        playChime('start');
         setRecognitionInstance(rec);
       } catch (err) {
         console.error("Failed to start SpeechRecognition", err);
@@ -434,6 +393,34 @@ export default function VoiceAssistant() {
                voiceStatus === 'speaking' ? 'Speaking...' : 'Ready to talk'}
             </div>
             <p className="text-slate-400 text-[10px] md:text-xs">Tap the mic button to start or stop speaking.</p>
+
+            {/* Animated Audio Waveform Bars */}
+            {(voiceStatus === 'listening' || voiceStatus === 'speaking') && (
+              <div className="flex items-center gap-1 h-6 justify-center mt-3">
+                <style>{`
+                  @keyframes bounce-bar {
+                    0% { transform: scaleY(0.25); }
+                    100% { transform: scaleY(1); }
+                  }
+                  .wave-bar {
+                    animation: bounce-bar 0.5s ease-in-out infinite alternate;
+                    transform-origin: center;
+                  }
+                `}</style>
+                {[...Array(9)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-0.75 rounded-full wave-bar ${
+                      voiceStatus === 'listening' ? 'bg-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'bg-violet-500/80 shadow-[0_0_8px_rgba(139,92,246,0.3)]'
+                    }`}
+                    style={{
+                      height: '20px',
+                      animationDelay: `${i * 0.08}s`
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Audio control bars */}
