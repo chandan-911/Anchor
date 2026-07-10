@@ -127,7 +127,7 @@ export default function VoiceAssistant() {
     stopPlayback();
 
     try {
-      await api.patch('/authentication/profile/', {
+      await api.patch('/auth/profile/', {
         language_preference: lang.code
       });
       fetchProfile();
@@ -358,6 +358,7 @@ export default function VoiceAssistant() {
             else if (containerType.includes('m4a')) ext = 'm4a';
 
             formData.append('audio', audioBlob, `voice.${ext}`);
+            formData.append('language', selectedLanguage.code);
 
             try {
               if (!activeVoiceConvId) {

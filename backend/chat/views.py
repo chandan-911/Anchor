@@ -156,10 +156,11 @@ class VoiceTranscribeView(APIView):
         else:
             mime_type = raw_mime
 
-        # Get user's preferred language for Whisper hints and Coach alignment instructions
+        # Get requested language parameter or fallback to user profile settings
+        requested_lang = request.data.get('language') or request.POST.get('language')
         from authentication.models import UserProfile
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        preferred_lang = profile.language_preference or 'en'
+        preferred_lang = requested_lang or profile.language_preference or 'en'
         
         lang_hint = 'en'
         if 'pa' in preferred_lang:
