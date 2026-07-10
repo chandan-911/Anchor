@@ -183,15 +183,7 @@ export default function VoiceAssistant() {
   };
 
   // Browser Speech-to-Text (STT)
-  const toggleListening = async () => {
-    if (!isListening && micPermission !== 'granted') {
-      const granted = await requestMicPermission();
-      if (!granted) {
-        alert("Microphone access is required to speak to the coach.");
-        return;
-      }
-    }
-
+  const toggleListening = () => {
     if (isListening) {
       if (recognitionInstance) {
         recognitionInstance.stop();
@@ -202,7 +194,7 @@ export default function VoiceAssistant() {
     } else {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        alert("Speech Recognition not supported in this browser.");
+        alert("Speech Recognition not supported in this browser. Please try Chrome, Edge, or Safari.");
         return;
       }
 
@@ -260,9 +252,15 @@ export default function VoiceAssistant() {
         setIsTranscribing(false);
       };
 
-      rec.start();
-      playChime('start');
-      setRecognitionInstance(rec);
+      try {
+        rec.start();
+        playChime('start');
+        setRecognitionInstance(rec);
+      } catch (err) {
+        console.error("Failed to start SpeechRecognition", err);
+        setIsListening(false);
+        setIsTranscribing(false);
+      }
     }
   };
 
