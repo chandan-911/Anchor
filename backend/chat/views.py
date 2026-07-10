@@ -296,7 +296,36 @@ class VoiceTranscribeView(APIView):
             "Make sure the response is valid JSON. Do not include any markdown backticks ```json ... ``` wrapper. Just output raw JSON."
         )
         
-        prompt = f"User Memory Context:\n{context_prompt}\n\nUser Question:\n{transcription}"
+        # Unicode helper to detect Gurmukhi (Punjabi) and Devanagari (Hindi) transcription scripts
+        detected_lang = 'english'
+        if any(0x0A00 <= ord(c) <= 0x0A7F for c in transcription):
+            detected_lang = 'punjabi'
+        elif any(0x0900 <= ord(c) <= 0x097F for c in transcription):
+            detected_lang = 'hindi'
+
+        lang_instruction = ""
+        if detected_lang == 'punjabi':
+            lang_instruction = (
+                "CRITICAL LANGUAGE RULE: The user has asked in Punjabi (using Gurmukhi characters). "
+                "You MUST reply in Punjabi using the native Gurmukhi script in the JSON 'text' field. "
+                "Do NOT write in English, do NOT translate it, and do NOT use Latin transliteration. Example: 'ਮੈਂ ਤੁਹਾਡੀ ਮਦਦ ਕਰ ਸਕਦਾ ਹਾਂ।'"
+            )
+        elif detected_lang == 'hindi':
+            lang_instruction = (
+                "CRITICAL LANGUAGE RULE: The user has asked in Hindi (using Devanagari characters). "
+                "You MUST reply in Hindi using the native Devanagari script in the JSON 'text' field. "
+                "Do NOT write in English, do NOT translate it, and do NOT use Latin transliteration. Example: 'मैं आपकी मदद कर सकता हूँ।'"
+            )
+        else:
+            lang_instruction = (
+                "CRITICAL LANGUAGE RULE: Respond in English in the JSON 'text' field."
+            )
+
+        prompt = (
+            f"User Memory Context:\n{context_prompt}\n\n"
+            f"User Question:\n{transcription}\n\n"
+            f"Instruction: {lang_instruction}"
+        )
         
         # 5. Query Gemini API
         ai_raw_response = query_gemini(prompt, system_instruction=system_instruction)

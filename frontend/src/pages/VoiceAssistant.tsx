@@ -277,7 +277,7 @@ export default function VoiceAssistant() {
               
               let isSpeakingStarted = false;
               let silenceStart = Date.now();
-              const SILENCE_DURATION_MS = 1800; // Auto-stop after 1.8 seconds of silence
+              const SILENCE_DURATION_MS = 5000; // Auto-stop after 5.0 seconds of silence
               const VOLUME_THRESHOLD = 12; // Lower limit to classify as active talking
 
               const checkVolume = () => {
