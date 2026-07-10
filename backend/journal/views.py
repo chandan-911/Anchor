@@ -20,15 +20,69 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
         content = serializer.validated_data.get('content', '')
         embedding = get_embedding(content)
         
+        # AI Mood and Emotional State Analysis
+        mood_score = 5
+        confidence_score = 5
+        stress_score = 5
+        energy_level = 5
+        
+        try:
+            from anchor_project.gemini import query_gemini
+            import json
+            
+            system_instruction = (
+                "You are an emotional analysis assistant. Analyze the user's journal entry text and output "
+                "ratings from 1 to 10 for each of the following properties:\n"
+                "1. mood_score (1 is extremely sad/depressed, 10 is extremely happy/elated)\n"
+                "2. confidence_score (1 is completely insecure/doubting, 10 is extremely confident/bold)\n"
+                "3. stress_score (1 is completely calm/relaxed, 10 is extremely stressed/anxious)\n"
+                "4. energy_level (1 is exhausted/fatigued, 10 is highly energetic/vibrant)\n\n"
+                "CRITICAL: Output ONLY valid JSON in the following format:\n"
+                "{\n"
+                "  \"mood_score\": 5,\n"
+                "  \"confidence_score\": 5,\n"
+                "  \"stress_score\": 5,\n"
+                "  \"energy_level\": 5\n"
+                "}\n"
+                "Do not include any explanation or markdown code wrappers."
+            )
+            
+            prompt = f"Analyze the following journal entry text:\n\n{content}"
+            ai_res = query_gemini(prompt, system_instruction=system_instruction, temperature=0.1)
+            
+            cleaned_res = ai_res.strip()
+            if cleaned_res.startswith("```json"):
+                cleaned_res = cleaned_res[7:]
+            if cleaned_res.endswith("```"):
+                cleaned_res = cleaned_res[:-3]
+            cleaned_res = cleaned_res.strip()
+            
+            scores = json.loads(cleaned_res)
+            mood_score = max(1, min(10, int(scores.get('mood_score', 5))))
+            confidence_score = max(1, min(10, int(scores.get('confidence_score', 5))))
+            stress_score = max(1, min(10, int(scores.get('stress_score', 5))))
+            energy_level = max(1, min(10, int(scores.get('energy_level', 5))))
+        except Exception as e:
+            print(f"[Journal Analysis] Failed to analyze emotional state: {e}")
+            
         # Save entry
-        entry = serializer.save(user=request.user, embedding=embedding)
+        entry = serializer.save(
+            user=request.user, 
+            embedding=embedding,
+            mood_score=mood_score,
+            confidence_score=confidence_score,
+            stress_score=stress_score,
+            energy_level=energy_level
+        )
         
         # Update streak, XP, badges
         gamification_data = log_user_activity(request.user, 'journal')
         
         headers = self.get_success_headers(serializer.data)
+        # Re-fetch serialized data to include the auto-calculated scores
+        refetched_serializer = self.get_serializer(entry)
         return Response({
-            "entry": serializer.data,
+            "entry": refetched_serializer.data,
             "gamification": gamification_data
         }, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -38,11 +92,51 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         
-        # Check if content changed to re-generate embedding
+        # Check if content changed to re-generate embedding and emotional analysis
         if 'content' in serializer.validated_data:
             content = serializer.validated_data['content']
             if content != instance.content:
                 serializer.validated_data['embedding'] = get_embedding(content)
                 
+                # Re-analyze emotional scores
+                try:
+                    from anchor_project.gemini import query_gemini
+                    import json
+                    
+                    system_instruction = (
+                        "You are an emotional analysis assistant. Analyze the user's journal entry text and output "
+                        "ratings from 1 to 10 for each of the following properties:\n"
+                        "1. mood_score (1 is extremely sad/depressed, 10 is extremely happy/elated)\n"
+                        "2. confidence_score (1 is completely insecure/doubting, 10 is extremely confident/bold)\n"
+                        "3. stress_score (1 is completely calm/relaxed, 10 is extremely stressed/anxious)\n"
+                        "4. energy_level (1 is exhausted/fatigued, 10 is highly energetic/vibrant)\n\n"
+                        "CRITICAL: Output ONLY valid JSON in the following format:\n"
+                        "{\n"
+                        "  \"mood_score\": 5,\n"
+                        "  \"confidence_score\": 5,\n"
+                        "  \"stress_score\": 5,\n"
+                        "  \"energy_level\": 5\n"
+                        "}\n"
+                        "Do not include any explanation or markdown code wrappers."
+                    )
+                    
+                    prompt = f"Analyze the following journal entry text:\n\n{content}"
+                    ai_res = query_gemini(prompt, system_instruction=system_instruction, temperature=0.1)
+                    
+                    cleaned_res = ai_res.strip()
+                    if cleaned_res.startswith("```json"):
+                        cleaned_res = cleaned_res[7:]
+                    if cleaned_res.endswith("```"):
+                        cleaned_res = cleaned_res[:-3]
+                    cleaned_res = cleaned_res.strip()
+                    
+                    scores = json.loads(cleaned_res)
+                    serializer.validated_data['mood_score'] = max(1, min(10, int(scores.get('mood_score', 5))))
+                    serializer.validated_data['confidence_score'] = max(1, min(10, int(scores.get('confidence_score', 5))))
+                    serializer.validated_data['stress_score'] = max(1, min(10, int(scores.get('stress_score', 5))))
+                    serializer.validated_data['energy_level'] = max(1, min(10, int(scores.get('energy_level', 5))))
+                except Exception as e:
+                    print(f"[Journal Analysis] Failed to re-analyze emotional state: {e}")
+                    
         serializer.save()
         return Response(serializer.data)

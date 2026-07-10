@@ -8,10 +8,6 @@ export default function Journal() {
   const queryClient = useQueryClient();
   const { fetchProfile } = useAuthStore();
   const [content, setContent] = useState('');
-  const [mood, setMood] = useState(5);
-  const [confidence, setConfidence] = useState(5);
-  const [stress, setStress] = useState(5);
-  const [energy, setEnergy] = useState(5);
   const [language, setLanguage] = useState('en');
   const [isRecording, setIsRecording] = useState(false);
   const [recognitionInstance, setRecognitionInstance] = useState<any>(null);
@@ -34,10 +30,6 @@ export default function Journal() {
     },
     onSuccess: (data) => {
       setContent('');
-      setMood(5);
-      setConfidence(5);
-      setStress(5);
-      setEnergy(5);
       setXpReward(data.gamification);
       queryClient.invalidateQueries({ queryKey: ['journals'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
@@ -106,10 +98,6 @@ export default function Journal() {
 
     createJournalMutation.mutate({
       content,
-      mood_score: mood,
-      confidence_score: confidence,
-      stress_score: stress,
-      energy_level: energy,
       language
     });
   };
@@ -187,54 +175,14 @@ export default function Journal() {
                 className="w-full glass-input rounded-2xl p-4 text-sm resize-none focus:outline-none"
               />
 
-              {/* Slider Metrics Grid */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                  <label className="text-xs text-slate-400 flex items-center gap-1 mb-2"><Smile className="w-4 h-4 text-amber-500" /> Mood ({mood}/10)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={mood}
-                    onChange={(e) => setMood(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500 bg-slate-800"
-                  />
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                  <label className="text-xs text-slate-400 flex items-center gap-1 mb-2"><Star className="w-4 h-4 text-indigo-400" /> Confidence ({confidence}/10)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={confidence}
-                    onChange={(e) => setConfidence(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500 bg-slate-800"
-                  />
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                  <label className="text-xs text-slate-400 flex items-center gap-1 mb-2"><AlertTriangle className="w-4 h-4 text-rose-500" /> Stress ({stress}/10)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={stress}
-                    onChange={(e) => setStress(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500 bg-slate-800"
-                  />
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80">
-                  <label className="text-xs text-slate-400 flex items-center gap-1 mb-2"><Battery className="w-4 h-4 text-emerald-400" /> Energy Level ({energy}/10)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={energy}
-                    onChange={(e) => setEnergy(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500 bg-slate-800"
-                  />
+              {/* AI Automated Analytics Callout */}
+              <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/10 flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-xs font-semibold text-white">Automated AI Analysis</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+                    Our AI cognitive engine automatically extracts your mood, confidence, stress, and energy metrics (1-10) directly from your reflection content. No manual sliders required.
+                  </div>
                 </div>
               </div>
 
@@ -245,7 +193,7 @@ export default function Journal() {
                 className="w-full glow-btn text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 text-sm"
               >
                 <Send className="w-4 h-4" />
-                {createJournalMutation.isPending ? 'Saving to Memory...' : 'Save Journal to AI Memory'}
+                {createJournalMutation.isPending ? 'Analyzing and Saving...' : 'Save Journal to AI Memory'}
               </button>
             </form>
           </div>
