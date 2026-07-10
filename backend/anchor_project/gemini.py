@@ -15,20 +15,28 @@ if GEMINI_API_KEY:
 
 def get_embedding(text: str):
     """
-    Generate embedding for text using Google Gemini API text-embedding-004 model.
+    Generate embedding for text using Google Gemini API.
     """
     if not text.strip() or not GEMINI_API_KEY:
         return None
     try:
         response = genai.embed_content(
-            model="models/text-embedding-004",
+            model="models/embedding-001",
             content=text,
             task_type="retrieval_document"
         )
         return response['embedding']
-    except Exception as e:
-        print(f"Error generating embedding: {e}")
-        return None
+    except Exception as e1:
+        try:
+            response = genai.embed_content(
+                model="models/text-embedding-004",
+                content=text,
+                task_type="retrieval_document"
+            )
+            return response['embedding']
+        except Exception as e2:
+            print(f"Error generating embedding: {e1} / {e2}")
+            return None
 
 def cosine_similarity(v1, v2):
     """

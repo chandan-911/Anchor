@@ -217,7 +217,7 @@ export default function AIChat() {
   // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
-      const res = await api.post(`/chat/conversations/${activeConvId}/messages/`, { content });
+      const res = await api.post(`/chat/conversations/${activeConvId}/ask/`, { message: content });
       return res.data;
     },
     onSuccess: () => {
