@@ -7,12 +7,10 @@ from decisions.models import Decision
 from swot.models import SWOTReport
 from analytics.models import Goal
 
-def retrieve_user_context(user, current_query: str, conversation_id: int = None, limit_semantic: int = 5):
+def retrieve_user_context(user, current_query: str, conversation_id: int = None, limit_semantic: int = 3):
     """
-    Retrieves the complete context of a user across different memory layers:
-    1. Short-term Memory (Today's journals, recent chat logs)
-    2. Long-term Memory (Goals, recent decisions, latest SWOT reports)
-    3. Semantic Memory (Vector search on old journals and messages)
+    Retrieves the complete context of a user across different memory layers,
+    optimized with intent-based RAG filters to minimize token usage.
     """
     context = {
         "short_term": {
@@ -27,63 +25,74 @@ def retrieve_user_context(user, current_query: str, conversation_id: int = None,
         "semantic_memories": []
     }
 
+    # Query Intent Detection to prune irrelevant context
+    query_lower = current_query.lower()
+    
+    # Keyword matches
+    has_goal_intent = any(w in query_lower for w in ['goal', 'aim', 'plan', 'achieve', 'target', 'future', 'career', 'milestone', 'focus'])
+    has_decision_intent = any(w in query_lower for w in ['decide', 'decision', 'choose', 'choice', 'option', 'alternative', 'dilemma', 'select'])
+    has_swot_intent = any(w in query_lower for w in ['swot', 'strength', 'weakness', 'opportunity', 'threat', 'risk', 'flaw', 'advantage'])
+
     # 1. Short-Term Memory
-    # Today's journals
+    # Today's journals (always relevant to current day's focus)
     today = datetime.date.today()
     today_journals = JournalEntry.objects.filter(user=user, created_at__date=today)
     for j in today_journals:
         context["short_term"]["today_journals"].append({
-            "content": j.content,
+            "content": j.content[:200] + '...' if len(j.content) > 200 else j.content, # Truncate content to save tokens
             "mood": j.mood_score,
             "confidence": j.confidence_score,
             "stress": j.stress_score,
             "energy": j.energy_level
         })
 
-    # Recent chat logs (last 8 messages from the active conversation)
+    # Recent chat logs (compressed to last 4 messages to save context tokens)
     if conversation_id:
         recent_messages = Message.objects.filter(
             conversation_id=conversation_id
-        ).order_by('-created_at')[:8]
+        ).order_by('-created_at')[:4]
         # Reverse to maintain chronological order
         for m in reversed(recent_messages):
             context["short_term"]["recent_chat"].append({
                 "sender": m.sender,
-                "content": m.content
+                "content": m.content[:250] + '...' if len(m.content) > 250 else m.content
             })
 
-    # 2. Long-Term Memory
-    # Active goals
-    active_goals = Goal.objects.filter(user=user, status='active')[:5]
+    # 2. Long-Term Memory (Intent-based selective loading)
+    # Active goals (load 2 if query is goal-related, else 1 as brief context)
+    goal_limit = 2 if has_goal_intent else 1
+    active_goals = Goal.objects.filter(user=user, status='active')[:goal_limit]
     for g in active_goals:
         context["long_term"]["active_goals"].append({
             "title": g.title,
-            "description": g.description,
+            "description": g.description[:150] + '...' if len(g.description) > 150 else g.description,
             "category": g.category
         })
 
-    # Recent decisions
-    recent_decisions = Decision.objects.filter(user=user).order_by('-created_at')[:5]
+    # Recent decisions (load 2 if query is decision-related, else 1 as brief context)
+    decision_limit = 2 if has_decision_intent else 1
+    recent_decisions = Decision.objects.filter(user=user).order_by('-created_at')[:decision_limit]
     for d in recent_decisions:
         context["long_term"]["recent_decisions"].append({
             "title": d.title,
             "status": d.status,
             "recommended": d.recommended_choice,
-            "summary": d.summary
+            "summary": d.summary[:150] + '...' if len(d.summary) > 150 else d.summary
         })
 
-    # Latest SWOT report
-    latest_swot = SWOTReport.objects.filter(user=user).order_by('-created_at').first()
-    if latest_swot:
-        context["long_term"]["latest_swot"] = {
-            "strengths": latest_swot.strengths,
-            "weaknesses": latest_swot.weaknesses,
-            "opportunities": latest_swot.opportunities,
-            "threats": latest_swot.threats,
-            "growth_recommendations": latest_swot.growth_recommendations
-        }
+    # Latest SWOT report (load only if query has SWOT intent or if no active goals/decisions are present)
+    if has_swot_intent or (not active_goals.exists() and not recent_decisions.exists()):
+        latest_swot = SWOTReport.objects.filter(user=user).order_by('-created_at').first()
+        if latest_swot:
+            context["long_term"]["latest_swot"] = {
+                "strengths": latest_swot.strengths[:3], # Prune arrays to top 3
+                "weaknesses": latest_swot.weaknesses[:3],
+                "opportunities": latest_swot.opportunities[:3],
+                "threats": latest_swot.threats[:3],
+                "growth_recommendations": latest_swot.growth_recommendations[:2]
+            }
 
-    # 3. Semantic Memory (Vector Search)
+    # 3. Semantic Memory (Vector Search with tighter thresholds)
     query_vector = get_embedding(current_query)
     if query_vector:
         candidates = []
@@ -96,7 +105,7 @@ def retrieve_user_context(user, current_query: str, conversation_id: int = None,
         )
         for pj in past_journals:
             similarity = cosine_similarity(query_vector, pj.embedding)
-            if similarity > 0.4:  # Threshold
+            if similarity > 0.55:  # Increased similarity threshold for stricter RAG filtering
                 candidates.append((similarity, "journal", pj.created_at, pj.content))
 
         # Pull candidate chat messages (excluding active conversation's recent ones)
@@ -109,18 +118,18 @@ def retrieve_user_context(user, current_query: str, conversation_id: int = None,
 
         for pm in past_messages:
             similarity = cosine_similarity(query_vector, pm.embedding)
-            if similarity > 0.4:
+            if similarity > 0.55: # Stricter relevance threshold
                 candidates.append((similarity, "chat_message", pm.created_at, pm.content))
 
         # Sort candidates by similarity descending
         candidates.sort(key=lambda x: x[0], reverse=True)
         
-        # Take top-K
+        # Take top-K (pruned to limit_semantic)
         for similarity, source, dt, text in candidates[:limit_semantic]:
             context["semantic_memories"].append({
                 "source": source,
                 "date": dt.strftime('%Y-%m-%d'),
-                "content": text,
+                "content": text[:200] + '...' if len(text) > 200 else text, # Truncate past text to save tokens
                 "similarity": round(similarity, 3)
             })
 
