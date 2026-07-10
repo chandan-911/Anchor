@@ -217,7 +217,7 @@ export default function SidebarLayout({ children }: SidebarLayoutProps) {
       <main className="flex-1 min-h-screen bg-gradient-to-tr from-[#02050f] via-[#040816] to-[#0a0f29] p-4 md:p-8 overflow-y-auto">
         {children}
       </main>
-    </div>
+
       {/* Mobile Floating Action Button (FAB) for Voice Coach */}
       {location.pathname !== '/voice' && (
         <Link
