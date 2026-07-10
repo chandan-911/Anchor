@@ -1,8 +1,5 @@
-from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.db.models import Q
-
-User = get_user_model()
 
 class EmailOrUsernameModelBackend(ModelBackend):
     """
@@ -13,6 +10,9 @@ class EmailOrUsernameModelBackend(ModelBackend):
         if username is None:
             return None
         
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
         try:
             # Query user by case-insensitive username OR case-insensitive email
             user = User.objects.filter(
@@ -21,6 +21,7 @@ class EmailOrUsernameModelBackend(ModelBackend):
             
             if user and user.check_password(password):
                 return user
-        except Exception:
+        except Exception as e:
+            print(f"[Auth Backend] Authentication failed with error: {e}")
             return None
         return None
