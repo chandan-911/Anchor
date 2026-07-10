@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { Mic, MicOff, Volume2, VolumeX, Square, Play, Pause, Sparkles, User, RefreshCw, LogOut } from 'lucide-react';
@@ -13,7 +13,7 @@ export default function VoiceAssistant() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [spokenText, setSpokenText] = useState('');
   const [aiSpeechResponse, setAiSpeechResponse] = useState('');
-  const [recognitionInstance, setRecognitionInstance] = useState<any>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [voiceVolume, setVoiceVolume] = useState(0.8);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [activeVoiceConvId, setActiveVoiceConvId] = useState<number | null>(null);
@@ -94,30 +94,6 @@ export default function VoiceAssistant() {
     initVoiceSession();
   }, []);
 
-  // Send transcription mutation
-  const speakToAIMutation = useMutation({
-    mutationFn: async (messageText: string) => {
-      if (!activeVoiceConvId) return null;
-      const res = await api.post(`/chat/conversations/${activeVoiceConvId}/ask/`, { message: messageText });
-      return res.data;
-    },
-    onSuccess: (data) => {
-      if (data) {
-        let aiMessageText = data.ai_message.content;
-        try {
-          const parsed = JSON.parse(aiMessageText);
-          aiMessageText = parsed.text || "I have analyzed your situation and updated your memory.";
-        } catch (e) {
-          // Keep raw content
-        }
-        setAiSpeechResponse(aiMessageText);
-        speakResponse(aiMessageText);
-        queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-        fetchProfile();
-      }
-    }
-  });
-
   // Browser Text-to-Speech (TTS)
   const speakResponse = (text: string) => {
     if (!('speechSynthesis' in window)) {
@@ -143,80 +119,111 @@ export default function VoiceAssistant() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Browser Speech-to-Text (STT)
-  const toggleListening = () => {
+  // Browser Speech-to-Text (STT) via MediaRecorder & Backend Transcription
+  const toggleListening = async () => {
     if (isListening) {
-      if (recognitionInstance) {
-        recognitionInstance.stop();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
       }
       setIsListening(false);
-      setIsTranscribing(false);
     } else {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        alert("Speech Recognition not supported in this browser. Please try Chrome, Edge, or Safari.");
-        return;
-      }
-
-      // If AI is speaking, stop it
-      if (isSpeaking) {
-        stopPlayback();
-      }
-
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = true;
-      rec.lang = selectedLang;
-
-      rec.onstart = () => {
-        setSpokenText('');
-        setIsListening(true);
-        setIsTranscribing(false);
-      };
-
-      rec.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        setIsTranscribing(true);
-        
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        
-        if (interimTranscript) {
-          setSpokenText(interimTranscript);
-        }
-        
-        if (finalTranscript) {
-          setSpokenText(finalTranscript);
-          setIsTranscribing(false);
-          speakToAIMutation.mutate(finalTranscript);
-        }
-      };
-
-      rec.onerror = (e: any) => {
-        console.error("STT Error", e);
-        setIsListening(false);
-        setIsTranscribing(false);
-        if (e.error === 'not-allowed') {
-          setMicPermission('denied');
-        }
-      };
-
-      rec.onend = () => {
-        setIsListening(false);
-        setIsTranscribing(false);
-      };
-
       try {
-        rec.start();
-        setRecognitionInstance(rec);
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // If AI is speaking, stop it
+        if (isSpeaking) {
+          stopPlayback();
+        }
+
+        let options = {};
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          options = { mimeType: 'audio/webm;codecs=opus' };
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          options = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          options = { mimeType: 'audio/ogg' };
+        } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+          options = { mimeType: 'audio/wav' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          options = { mimeType: 'audio/mp4' };
+        }
+
+        const recorder = new MediaRecorder(stream, options);
+        const chunks: Blob[] = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunks.push(e.data);
+          }
+        };
+
+        recorder.onstart = () => {
+          setSpokenText('');
+          setIsListening(true);
+          setIsTranscribing(false);
+        };
+
+        recorder.onstop = async () => {
+          setIsListening(false);
+          setIsTranscribing(true); // User is waiting for backend transcription
+
+          // Stop all audio tracks immediately to release the mic
+          stream.getTracks().forEach(track => track.stop());
+
+          const mimeType = recorder.mimeType || 'audio/webm';
+          const audioBlob = new Blob(chunks, { type: mimeType });
+
+          const formData = new FormData();
+          let filename = 'voice.webm';
+          if (mimeType.includes('wav')) filename = 'voice.wav';
+          else if (mimeType.includes('ogg')) filename = 'voice.ogg';
+          else if (mimeType.includes('mp4')) filename = 'voice.mp4';
+          else if (mimeType.includes('m4a')) filename = 'voice.m4a';
+
+          formData.append('audio', audioBlob, filename);
+
+          try {
+            if (!activeVoiceConvId) {
+              alert("Voice session not initialized. Please try again.");
+              setIsTranscribing(false);
+              return;
+            }
+
+            const res = await api.post(`/chat/conversations/${activeVoiceConvId}/voice-transcribe/`, formData, {
+              headers: {
+                'Content-Type': 'multipart/form-data'
+              }
+            });
+
+            const textTranscribed = res.data.transcription;
+            setSpokenText(textTranscribed);
+
+            let aiMessageText = res.data.ai_message.content;
+            try {
+              const parsed = JSON.parse(aiMessageText);
+              aiMessageText = parsed.text || "I have analyzed your situation.";
+            } catch (e) {
+              // Raw content fallback
+            }
+
+            setAiSpeechResponse(aiMessageText);
+            speakResponse(aiMessageText);
+
+            queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+            fetchProfile();
+          } catch (err: any) {
+            console.error("Failed to upload/transcribe voice", err);
+            alert(err.response?.data?.detail || "Failed to process your voice input. Please try again.");
+          } finally {
+            setIsTranscribing(false);
+          }
+        };
+
+        recorder.start();
+        setMediaRecorder(recorder);
       } catch (err) {
-        console.error("Failed to start SpeechRecognition", err);
+        console.error("Failed to start recording", err);
+        alert("Failed to start voice recorder. Please verify microphone permission settings.");
         setIsListening(false);
         setIsTranscribing(false);
       }
@@ -239,10 +246,9 @@ export default function VoiceAssistant() {
   const handleEndSession = async () => {
     if (!activeVoiceConvId) return;
     
-    // Stop listening and speaking first
     stopPlayback();
-    if (isListening && recognitionInstance) {
-      recognitionInstance.stop();
+    if (isListening && mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
       setIsListening(false);
       setIsTranscribing(false);
     }
@@ -269,7 +275,7 @@ export default function VoiceAssistant() {
 
   const voiceStatus = isListening 
     ? 'listening' 
-    : speakToAIMutation.isPending 
+    : isTranscribing 
       ? 'thinking' 
       : isSpeaking 
         ? 'speaking' 
@@ -369,7 +375,7 @@ export default function VoiceAssistant() {
             
             <button
               onClick={toggleListening}
-              disabled={speakToAIMutation.isPending}
+              disabled={isTranscribing}
               className={`h-20 w-20 md:h-24 md:w-24 rounded-full flex items-center justify-center text-white transition-all shadow-xl ${
                 voiceStatus === 'listening' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30' :
                 voiceStatus === 'thinking' ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30' :
