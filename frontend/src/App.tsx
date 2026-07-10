@@ -26,13 +26,13 @@ const queryClient = new QueryClient();
 
 // Auth Protection Component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, checkAuth, isLoading } = useAuthStore();
+  const { isAuthenticated, checkAuth, isCheckingAuth } = useAuthStore();
 
   useEffect(() => {
     checkAuth();
   }, []);
 
-  if (isLoading) {
+  if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-background-dark flex items-center justify-center">
         <div className="relative flex flex-col items-center gap-3">

@@ -24,6 +24,7 @@ interface AuthState {
   profile: Profile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isCheckingAuth: boolean;
   error: string | null;
   login: (credentials: any) => Promise<any>;
   register: (userData: any) => Promise<any>;
@@ -38,6 +39,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   profile: null,
   isAuthenticated: false,
   isLoading: false,
+  isCheckingAuth: true,
   error: null,
 
   login: async (credentials) => {
@@ -121,5 +123,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } else {
       set({ isAuthenticated: false });
     }
+    set({ isCheckingAuth: false });
   }
 }));
