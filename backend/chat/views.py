@@ -15,9 +15,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Conversation.objects.filter(user=self.request.user).order_by('-updated_at')
+        # Exclude temporary voice sessions from the user's permanent conversation history
+        return Conversation.objects.filter(user=self.request.user).exclude(title="Voice Session").order_by('-updated_at')
 
     def perform_create(self, serializer):
+        # Automatically clean up any abandoned/unsaved Voice Session drafts for the user
+        Conversation.objects.filter(user=self.request.user, title="Voice Session").delete()
         serializer.save(user=self.request.user)
 
 class MessageListView(APIView):

@@ -259,8 +259,26 @@ export default function VoiceAssistant() {
     );
 
     if (saveSession) {
-      alert("Session saved successfully!");
-      navigate('/chat');
+      try {
+        const dateStr = new Date().toLocaleDateString(undefined, { 
+          month: 'short', 
+          day: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        });
+        
+        // Rename the conversation from "Voice Session" so it passes get_queryset filtration and becomes visible
+        await api.patch(`/chat/conversations/${activeVoiceConvId}/`, {
+          title: `Voice Reflection (${dateStr})`
+        });
+        
+        alert("Session saved successfully!");
+        navigate('/chat');
+      } catch (e) {
+        console.error("Failed to save voice session", e);
+        alert("Failed to save voice session, redirecting to chat list.");
+        navigate('/chat');
+      }
     } else {
       try {
         await api.delete(`/chat/conversations/${activeVoiceConvId}/`);
