@@ -141,7 +141,17 @@ class VoiceTranscribeView(APIView):
         
         # Read file bytes
         audio_bytes = audio_file.read()
-        mime_type = audio_file.content_type or 'audio/webm'
+        
+        # Sanitize mime type for Gemini
+        raw_mime = audio_file.content_type or 'audio/webm'
+        if ';' in raw_mime:
+            raw_mime = raw_mime.split(';')[0].strip()
+            
+        # Map iOS containers to Gemini supported formats
+        if raw_mime in ['audio/mp4', 'audio/m4a', 'audio/x-m4a']:
+            mime_type = 'audio/aac'
+        else:
+            mime_type = raw_mime
         
         # 1. Transcribe the audio using Gemini
         try:
@@ -150,7 +160,7 @@ class VoiceTranscribeView(APIView):
             if not GEMINI_API_KEY:
                 raise ValueError("Gemini API Key is not configured.")
                 
-            print(f"[Voice Backend] Transcribing audio with mime_type: {mime_type}...")
+            print(f"[Voice Backend] Transcribing audio with raw_mime: {raw_mime} -> Gemini mime_type: {mime_type}...")
             
             # Use Gemini 1.5 Flash to transcribe the audio content directly
             model = genai.GenerativeModel("gemini-1.5-flash")
@@ -161,14 +171,24 @@ class VoiceTranscribeView(APIView):
                 },
                 "Please transcribe this audio into the exact text spoken. Return ONLY the transcription, with no extra tags, introductory phrases, or markdown. If nothing is spoken or it is silent, return empty string."
             ])
-            transcription = response.text.strip()
+            
+            # Safe text extraction fallback to prevent exceptions from safety filters
+            transcription = ""
+            try:
+                transcription = response.text.strip()
+            except Exception:
+                if response.candidates and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    if candidate.content and candidate.content.parts:
+                        transcription = "".join([part.text for part in candidate.content.parts if hasattr(part, 'text')]).strip()
+            
             print(f"[Voice Backend] Transcribed text: {transcription}")
         except Exception as e:
             print(f"[Voice Backend] Transcription failed: {e}")
             return Response({"detail": f"Failed to transcribe audio: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if not transcription:
-            return Response({"detail": "No clear speech detected in the audio."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "No clear speech detected in the audio. Please speak closer to your microphone or try again."}, status=status.HTTP_400_BAD_REQUEST)
 
         # 2. Generate user embedding and save user message
         user_emb = get_embedding(transcription)
