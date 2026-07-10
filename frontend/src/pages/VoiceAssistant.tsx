@@ -38,6 +38,10 @@ export default function VoiceAssistant() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [volume, setVolume] = useState(0.85);
 
+  // Silence auto-detection Refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
   // Transcript feedback
   const [userSpeech, setUserSpeech] = useState<string>('');
   const [assistantReply, setAssistantReply] = useState<string>('');
@@ -256,10 +260,74 @@ export default function VoiceAssistant() {
           recorder.onstart = () => {
             setUserSpeech('');
             setVoiceState('listening');
+
+            // Set up volume analyzer loop for auto-silence stop detection
+            try {
+              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const source = audioContext.createMediaStreamSource(stream);
+              const analyser = audioContext.createAnalyser();
+              analyser.fftSize = 256;
+              source.connect(analyser);
+              
+              audioContextRef.current = audioContext;
+              analyserRef.current = analyser;
+
+              const bufferLength = analyser.frequencyBinCount;
+              const dataArray = new Uint8Array(bufferLength);
+              
+              let isSpeakingStarted = false;
+              let silenceStart = Date.now();
+              const SILENCE_DURATION_MS = 1800; // Auto-stop after 1.8 seconds of silence
+              const VOLUME_THRESHOLD = 12; // Lower limit to classify as active talking
+
+              const checkVolume = () => {
+                // Terminate loop if recorder stops
+                if (recorder.state === 'inactive') {
+                  if (audioContext.state !== 'closed') {
+                    audioContext.close();
+                  }
+                  return;
+                }
+
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                  sum += dataArray[i];
+                }
+                const averageVolume = sum / bufferLength;
+
+                if (averageVolume > VOLUME_THRESHOLD) {
+                  isSpeakingStarted = true;
+                  silenceStart = Date.now();
+                } else {
+                  if (isSpeakingStarted) {
+                    const silentPeriod = Date.now() - silenceStart;
+                    if (silentPeriod > SILENCE_DURATION_MS) {
+                      console.log("[Auto Voice Assistant] Silence detected for 1.8s, triggering stop...");
+                      recorder.stop();
+                      if (audioContext.state !== 'closed') {
+                        audioContext.close();
+                      }
+                      return;
+                    }
+                  }
+                }
+                requestAnimationFrame(checkVolume);
+              };
+
+              requestAnimationFrame(checkVolume);
+            } catch (analyserErr) {
+              console.warn("Failed to initialize silence detection analyzer context", analyserErr);
+            }
           };
 
           recorder.onstop = async () => {
             setVoiceState('transcribing');
+
+            // Clean up AudioContext if active
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+              audioContextRef.current.close();
+            }
             
             // Kill audio tracks immediately to free mic icon on browser tabs
             stream.getTracks().forEach(track => track.stop());
