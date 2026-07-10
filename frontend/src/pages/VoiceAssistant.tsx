@@ -127,106 +127,107 @@ export default function VoiceAssistant() {
       }
       setIsListening(false);
     } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        // If AI is speaking, stop it
-        if (isSpeaking) {
-          stopPlayback();
-        }
-
-        let options = {};
-        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          options = { mimeType: 'audio/webm;codecs=opus' };
-        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-          options = { mimeType: 'audio/webm' };
-        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-          options = { mimeType: 'audio/ogg' };
-        } else if (MediaRecorder.isTypeSupported('audio/wav')) {
-          options = { mimeType: 'audio/wav' };
-        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          options = { mimeType: 'audio/mp4' };
-        }
-
-        const recorder = new MediaRecorder(stream, options);
-        const chunks: Blob[] = [];
-
-        recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            chunks.push(e.data);
+      // 1. Stop any ongoing coach speech instantly to clear hardware routes
+      stopPlayback();
+      
+      // 2. Introduce a 350ms delay to let the OS release speaker hardware before starting mic recording
+      setTimeout(async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          
+          let options = {};
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            options = { mimeType: 'audio/webm;codecs=opus' };
+          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options = { mimeType: 'audio/webm' };
+          } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+            options = { mimeType: 'audio/ogg' };
+          } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+            options = { mimeType: 'audio/wav' };
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
           }
-        };
 
-        recorder.onstart = () => {
-          setSpokenText('');
-          setIsListening(true);
-          setIsTranscribing(false);
-        };
+          const recorder = new MediaRecorder(stream, options);
+          const chunks: Blob[] = [];
 
-        recorder.onstop = async () => {
-          setIsListening(false);
-          setIsTranscribing(true); // User is waiting for backend transcription
-
-          // Stop all audio tracks immediately to release the mic
-          stream.getTracks().forEach(track => track.stop());
-
-          const mimeType = recorder.mimeType || 'audio/webm';
-          const audioBlob = new Blob(chunks, { type: mimeType });
-
-          const formData = new FormData();
-          let filename = 'voice.webm';
-          if (mimeType.includes('wav')) filename = 'voice.wav';
-          else if (mimeType.includes('ogg')) filename = 'voice.ogg';
-          else if (mimeType.includes('mp4')) filename = 'voice.mp4';
-          else if (mimeType.includes('m4a')) filename = 'voice.m4a';
-
-          formData.append('audio', audioBlob, filename);
-
-          try {
-            if (!activeVoiceConvId) {
-              alert("Voice session not initialized. Please try again.");
-              setIsTranscribing(false);
-              return;
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+              chunks.push(e.data);
             }
+          };
 
-            const res = await api.post(`/chat/conversations/${activeVoiceConvId}/voice-transcribe/`, formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data'
-              }
-            });
-
-            const textTranscribed = res.data.transcription;
-            setSpokenText(textTranscribed);
-
-            let aiMessageText = res.data.ai_message.content;
-            try {
-              const parsed = JSON.parse(aiMessageText);
-              aiMessageText = parsed.text || "I have analyzed your situation.";
-            } catch (e) {
-              // Raw content fallback
-            }
-
-            setAiSpeechResponse(aiMessageText);
-            speakResponse(aiMessageText);
-
-            queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-            fetchProfile();
-          } catch (err: any) {
-            console.error("Failed to upload/transcribe voice", err);
-            alert(err.response?.data?.detail || "Failed to process your voice input. Please try again.");
-          } finally {
+          recorder.onstart = () => {
+            setSpokenText('');
+            setIsListening(true);
             setIsTranscribing(false);
-          }
-        };
+          };
 
-        recorder.start();
-        setMediaRecorder(recorder);
-      } catch (err) {
-        console.error("Failed to start recording", err);
-        alert("Failed to start voice recorder. Please verify microphone permission settings.");
-        setIsListening(false);
-        setIsTranscribing(false);
-      }
+          recorder.onstop = async () => {
+            setIsListening(false);
+            setIsTranscribing(true); // User is waiting for backend transcription
+
+            // Stop all audio tracks immediately to release the mic
+            stream.getTracks().forEach(track => track.stop());
+
+            const mimeType = recorder.mimeType || 'audio/webm';
+            const audioBlob = new Blob(chunks, { type: mimeType });
+
+            const formData = new FormData();
+            let filename = 'voice.webm';
+            if (mimeType.includes('wav')) filename = 'voice.wav';
+            else if (mimeType.includes('ogg')) filename = 'voice.ogg';
+            else if (mimeType.includes('mp4')) filename = 'voice.mp4';
+            else if (mimeType.includes('m4a')) filename = 'voice.m4a';
+
+            formData.append('audio', audioBlob, filename);
+
+            try {
+              if (!activeVoiceConvId) {
+                alert("Voice session not initialized. Please try again.");
+                setIsTranscribing(false);
+                return;
+              }
+
+              const res = await api.post(`/chat/conversations/${activeVoiceConvId}/voice-transcribe/`, formData, {
+                headers: {
+                  'Content-Type': 'multipart/form-data'
+                }
+              });
+
+              const textTranscribed = res.data.transcription;
+              setSpokenText(textTranscribed);
+
+              let aiMessageText = res.data.ai_message.content;
+              try {
+                const parsed = JSON.parse(aiMessageText);
+                aiMessageText = parsed.text || "I have analyzed your situation.";
+              } catch (e) {
+                // Raw content fallback
+              }
+
+              setAiSpeechResponse(aiMessageText);
+              speakResponse(aiMessageText);
+
+              queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+              fetchProfile();
+            } catch (err: any) {
+              console.error("Failed to upload/transcribe voice", err);
+              alert(err.response?.data?.detail || "Failed to process your voice input. Please try again.");
+            } finally {
+              setIsTranscribing(false);
+            }
+          };
+
+          recorder.start();
+          setMediaRecorder(recorder);
+        } catch (err) {
+          console.error("Failed to start recording", err);
+          alert("Failed to start voice recorder. Please verify microphone permission settings.");
+          setIsListening(false);
+          setIsTranscribing(false);
+        }
+      }, 350);
     }
   };
 

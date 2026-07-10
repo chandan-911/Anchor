@@ -156,42 +156,72 @@ class VoiceTranscribeView(APIView):
         else:
             mime_type = raw_mime
         
-        # 1. Transcribe the audio using Gemini
+        # 1. Transcribe the audio (Try 1: Gemini multimodal, Try 2: Groq Whisper fallback)
+        transcription = ""
+        transcription_error = ""
+        
+        # Try 1: Gemini 1.5 Flash
         try:
             import google.generativeai as genai
             from anchor_project.gemini import GEMINI_API_KEY
-            if not GEMINI_API_KEY:
-                raise ValueError("Gemini API Key is not configured.")
+            if GEMINI_API_KEY:
+                print(f"[Voice Backend] Attempting transcription via Gemini: raw_mime={raw_mime} -> Gemini mime_type={mime_type}...")
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                response = model.generate_content([
+                    {
+                        "mime_type": mime_type,
+                        "data": audio_bytes
+                    },
+                    "Please transcribe this audio into the exact text spoken. Return ONLY the transcription, with no extra tags, introductory phrases, or markdown. If nothing is spoken or it is silent, return empty string."
+                ])
                 
-            print(f"[Voice Backend] Transcribing audio with raw_mime: {raw_mime} -> Gemini mime_type: {mime_type}...")
-            
-            # Use Gemini 1.5 Flash to transcribe the audio content directly
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content([
-                {
-                    "mime_type": mime_type,
-                    "data": audio_bytes
-                },
-                "Please transcribe this audio into the exact text spoken. Return ONLY the transcription, with no extra tags, introductory phrases, or markdown. If nothing is spoken or it is silent, return empty string."
-            ])
-            
-            # Safe text extraction fallback to prevent exceptions from safety filters
-            transcription = ""
-            try:
-                transcription = response.text.strip()
-            except Exception:
-                if response.candidates and len(response.candidates) > 0:
-                    candidate = response.candidates[0]
-                    if candidate.content and candidate.content.parts:
-                        transcription = "".join([part.text for part in candidate.content.parts if hasattr(part, 'text')]).strip()
-            
-            print(f"[Voice Backend] Transcribed text: {transcription}")
+                try:
+                    transcription = response.text.strip()
+                except Exception:
+                    if response.candidates and len(response.candidates) > 0:
+                        candidate = response.candidates[0]
+                        if candidate.content and candidate.content.parts:
+                            transcription = "".join([part.text for part in candidate.content.parts if hasattr(part, 'text')]).strip()
         except Exception as e:
-            print(f"[Voice Backend] Transcription failed: {e}")
-            return Response({"detail": f"Failed to transcribe audio: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            print(f"[Voice Backend] Gemini transcription failed: {e}")
+            transcription_error = str(e)
+
+        # Try 2: Groq Whisper Fallback
+        if not transcription:
+            try:
+                import requests
+                from anchor_project.gemini import os
+                grok_key = os.getenv('GROK_API_KEY')
+                if grok_key:
+                    print(f"[Voice Backend] Gemini returned empty/failed. Trying Groq Whisper fallback...")
+                    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+                    headers = {
+                        "Authorization": f"Bearer {grok_key}"
+                    }
+                    filename = 'voice.webm'
+                    if 'wav' in raw_mime: filename = 'voice.wav'
+                    elif 'mp4' in raw_mime: filename = 'voice.mp4'
+                    
+                    files = {
+                        "file": (filename, audio_bytes, raw_mime),
+                        "model": (None, "whisper-large-v3")
+                    }
+                    res = requests.post(url, headers=headers, files=files, timeout=12)
+                    if res.status_code == 200:
+                        transcription = res.json().get('text', '').strip()
+                        print(f"[Voice Backend] Groq Whisper transcription success: {transcription}")
+                    else:
+                        print(f"[Voice Backend] Groq Whisper returned status {res.status_code}: {res.text}")
+                        transcription_error += f" | Groq Status {res.status_code}"
+            except Exception as e:
+                print(f"[Voice Backend] Groq Whisper fallback failed: {e}")
+                transcription_error += f" | Whisper Error: {str(e)}"
 
         if not transcription:
-            return Response({"detail": "No clear speech detected in the audio. Please speak closer to your microphone or try again."}, status=status.HTTP_400_BAD_REQUEST)
+            error_msg = "No clear speech detected in the audio. Please speak closer to your microphone or try again."
+            if "not-allowed" in transcription_error or "403" in transcription_error:
+                error_msg = "API authentication error. Please try again or check keys."
+            return Response({"detail": error_msg}, status=status.HTTP_400_BAD_REQUEST)
 
         # 2. Generate user embedding and save user message
         user_emb = get_embedding(transcription)
