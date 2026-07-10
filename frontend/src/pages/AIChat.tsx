@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import { 
   MessageSquare, Send, Sparkles, AlertTriangle, CheckCircle, 
-  ChevronDown, ChevronUp, Plus, Star, Award, Compass, Eye, Play, ArrowUpRight, Trash2, X, ChevronLeft, ChevronRight
+  ChevronDown, ChevronUp, Plus, Star, Award, Compass, Eye, Play, ArrowUpRight, Trash2, X, ChevronLeft, ChevronRight,
+  Volume2, VolumeX, Mic, MicOff
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
@@ -169,6 +170,104 @@ export default function AIChat() {
   const [inputMessage, setInputMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(window.innerWidth < 768);
+
+  // Speech Recognition & Synthesis states
+  const [isRecording, setIsRecording] = useState(false);
+  const [recognitionInstance, setRecognitionInstance] = useState<any>(null);
+  const [activeSpeechMessageId, setActiveSpeechMessageId] = useState<number | null>(null);
+
+  // Stop reading when changing conversations or when component unmounts
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setActiveSpeechMessageId(null);
+    if (isRecording && recognitionInstance) {
+      recognitionInstance.stop();
+      setIsRecording(false);
+    }
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [activeConvId]);
+
+  // Voice Input (STT dictation)
+  const handleVoiceInput = () => {
+    if (isRecording) {
+      if (recognitionInstance) {
+        recognitionInstance.stop();
+      }
+      setIsRecording(false);
+    } else {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Speech Recognition is not supported by your browser. Please try Chrome or Safari.");
+        return;
+      }
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.lang = 'en-US';
+      
+      rec.onresult = (event: any) => {
+        const text = event.results[event.results.length - 1][0].transcript;
+        setInputMessage((prev) => prev + (prev ? ' ' : '') + text);
+      };
+      
+      rec.onerror = (e: any) => {
+        console.error("Speech Recognition Error", e);
+        setIsRecording(false);
+      };
+      
+      rec.onend = () => {
+        setIsRecording(false);
+      };
+      
+      rec.start();
+      setRecognitionInstance(rec);
+      setIsRecording(true);
+    }
+  };
+
+  // Text-to-Speech (TTS playback)
+  const toggleSpeechPlayback = (msgId: number, rawContent: string) => {
+    if (activeSpeechMessageId === msgId) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      setActiveSpeechMessageId(null);
+    } else {
+      if ('speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.resume();
+          window.speechSynthesis.cancel();
+        } catch (e) {}
+
+        let cleanText = rawContent;
+        try {
+          const parsed = JSON.parse(rawContent);
+          cleanText = parsed.text || cleanText;
+        } catch (e) {}
+
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = 'en-US';
+        
+        utterance.onend = () => {
+          setActiveSpeechMessageId(null);
+        };
+        utterance.onerror = () => {
+          setActiveSpeechMessageId(null);
+        };
+        
+        // Prevent early garbage collection
+        (window as any)._chatUtterance = utterance;
+        setActiveSpeechMessageId(msgId);
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+  };
 
   // Fetch conversations
   const { data: conversations, isLoading: convsLoading } = useQuery({
@@ -365,7 +464,29 @@ export default function AIChat() {
                     {msg.sender === 'user' ? (
                       <p className="text-sm leading-relaxed">{msg.content}</p>
                     ) : (
-                      <AIResponseRenderer jsonContent={msg.content} />
+                      <div className="relative group">
+                        <AIResponseRenderer jsonContent={msg.content} />
+                        <div className="flex justify-end pt-2 border-t border-slate-800/50 mt-3">
+                          <button
+                            onClick={() => toggleSpeechPlayback(msg.id, msg.content)}
+                            className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 text-[10px] font-semibold ${
+                              activeSpeechMessageId === msg.id
+                                ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                                : 'bg-slate-950/40 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            {activeSpeechMessageId === msg.id ? (
+                              <>
+                                <VolumeX className="w-3.5 h-3.5" /> Stop Speech
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="w-3.5 h-3.5" /> Read Aloud
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -404,9 +525,21 @@ export default function AIChat() {
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Ask anything (e.g. 'Why am I stuck?', 'Which job should I choose?')..."
+              placeholder={isRecording ? "Listening to your dictation..." : "Ask anything (e.g. 'Why am I stuck?', 'Which job should I choose?')..."}
               className="flex-1 glass-input rounded-xl py-3 px-4 text-xs focus:outline-none"
             />
+            <button
+              type="button"
+              onClick={handleVoiceInput}
+              className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                isRecording
+                  ? 'bg-rose-600 border-rose-500 text-white animate-pulse shadow-lg shadow-rose-600/25'
+                  : 'bg-slate-900 border-slate-850 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+              title={isRecording ? "Stop Recording" : "Dictate Message"}
+            >
+              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
             <button
               type="submit"
               disabled={!inputMessage.trim() || sendMessageMutation.isPending}
