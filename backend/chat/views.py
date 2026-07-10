@@ -155,11 +155,38 @@ class VoiceTranscribeView(APIView):
             mime_type = 'audio/aac'
         else:
             mime_type = raw_mime
+
+        # Get user's preferred language for Whisper hints and Coach alignment instructions
+        from authentication.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        preferred_lang = profile.language_preference or 'en'
+        
+        lang_hint = 'en'
+        if 'pa' in preferred_lang:
+            lang_hint = 'pa'
+        elif 'hi' in preferred_lang:
+            lang_hint = 'hi'
+        elif 'es' in preferred_lang:
+            lang_hint = 'es'
+        elif 'fr' in preferred_lang:
+            lang_hint = 'fr'
+        elif 'ja' in preferred_lang:
+            lang_hint = 'ja'
         
         # 1. Transcribe the audio (Try 1: Gemini multimodal, Try 2: Groq Whisper fallback)
         transcription = ""
         transcription_error = ""
         
+        # Multi-lingual transcription instructions
+        transcription_instruction = (
+            "You are an expert multi-lingual speech-to-text transcriber. Transcribe this audio recording into exact, grammatical text. "
+            "Follow these guidelines:\n"
+            "1. The user may speak in English, Hindi, or Punjabi, or code-switch/mix these languages. Transcribe exactly in the language(s) spoken using their correct scripts (Devanagari for Hindi, Gurmukhi for Punjabi, Latin for English).\n"
+            "2. Filter out filler words, stutters, and verbal ticks (e.g., 'um', 'uh', 'ah', 'like') to produce clean, legible text.\n"
+            "3. Use surrounding sentence context to resolve phonetic ambiguities and spelling errors.\n"
+            "4. Return ONLY the final transcribed text. Do NOT include any introductory notes, wrappers, explanations, tags, or markdown backticks."
+        )
+
         # Try 1: Gemini 1.5 Flash
         try:
             import google.generativeai as genai
@@ -172,7 +199,7 @@ class VoiceTranscribeView(APIView):
                         "mime_type": mime_type,
                         "data": audio_bytes
                     },
-                    "Please transcribe this audio into the exact text spoken. Return ONLY the transcription, with no extra tags, introductory phrases, or markdown. If nothing is spoken or it is silent, return empty string."
+                    transcription_instruction
                 ])
                 
                 try:
@@ -193,7 +220,7 @@ class VoiceTranscribeView(APIView):
                 from anchor_project.gemini import os
                 grok_key = os.getenv('GROK_API_KEY')
                 if grok_key:
-                    print(f"[Voice Backend] Gemini returned empty/failed. Trying Groq Whisper fallback...")
+                    print(f"[Voice Backend] Gemini failed/empty. Trying Groq Whisper fallback (hint: {lang_hint})...")
                     url = "https://api.groq.com/openai/v1/audio/transcriptions"
                     headers = {
                         "Authorization": f"Bearer {grok_key}"
@@ -204,7 +231,8 @@ class VoiceTranscribeView(APIView):
                     
                     files = {
                         "file": (filename, audio_bytes, raw_mime),
-                        "model": (None, "whisper-large-v3")
+                        "model": (None, "whisper-large-v3"),
+                        "language": (None, lang_hint)
                     }
                     res = requests.post(url, headers=headers, files=files, timeout=12)
                     if res.status_code == 200:
@@ -241,6 +269,9 @@ class VoiceTranscribeView(APIView):
             "You are the Anchor AI Coach & Decision Strategist. You help the user stop overthinking, "
             "obtain clarity, and take action. You have access to their history of journals, goals, decisions, "
             "streaks, and SWOT analysis.\n\n"
+            f"LANGUAGE RULE: The user's preferred language is '{preferred_lang}'. You MUST reply in the language "
+            "matching their audio transcription (e.g., if the user spoke in Gurmukhi/Punjabi, your reply text MUST be in Punjabi; "
+            "likewise for Hindi or English). Ensure your main response ('text' field in JSON) matches this language naturally.\n\n"
             "CRITICAL: You must NEVER reply using raw markdown text. You must respond in a structured JSON "
             "format so the frontend can render rich interactive UI widgets instead of raw markdown.\n\n"
             "Here is the required JSON structure you MUST return:\n"

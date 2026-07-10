@@ -130,10 +130,15 @@ export default function VoiceAssistant() {
       // 1. Stop any ongoing coach speech instantly to clear hardware routes
       stopPlayback();
       
-      // 2. Introduce a 350ms delay to let the OS release speaker hardware before starting mic recording
       setTimeout(async () => {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            } 
+          });
           
           let options = {};
           if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
