@@ -255,26 +255,33 @@ def query_multimodal_vision(image_bytes, mime_type, prompt):
 
     # Fallback configuration for other vision models
     vision_fallbacks = [
-        # 2. Groq Llama 3.2 Vision
-        {
-            "name": "Groq Llama 3.2 Vision",
-            "url": "https://api.groq.com/openai/v1/chat/completions",
-            "key": os.getenv('GROK_API_KEY'),
-            "model": "llama-3.2-11b-vision-preview"
-        },
-        # 3. OpenRouter Multimodal
-        {
-            "name": "OpenRouter Vision",
-            "url": "https://openrouter.ai/api/v1/chat/completions",
-            "key": os.getenv('OPENROUTER_API_KEY'),
-            "model": "google/gemini-flash-1.5"
-        },
-        # 4. Fireworks Vision
+        # 1. Fireworks Vision
         {
             "name": "Fireworks Vision",
             "url": "https://api.fireworks.ai/inference/v1/chat/completions",
             "key": os.getenv('FIREWORKS_API_KEY'),
-            "model": "accounts/fireworks/models/llama-v3p2-11b-instruct"
+            "model": "accounts/fireworks/models/llama-v3p2-11b-vision-instruct"
+        },
+        # 2. OpenRouter Nvidia Nemotron VL (free)
+        {
+            "name": "OpenRouter Nvidia Nemotron VL Free",
+            "url": "https://openrouter.ai/api/v1/chat/completions",
+            "key": os.getenv('OPENROUTER_API_KEY'),
+            "model": "nvidia/nemotron-nano-12b-v2-vl:free"
+        },
+        # 3. OpenRouter Google Gemma 4 Free
+        {
+            "name": "OpenRouter Google Gemma 4 Free",
+            "url": "https://openrouter.ai/api/v1/chat/completions",
+            "key": os.getenv('OPENROUTER_API_KEY'),
+            "model": "google/gemma-4-26b-a4b-it:free"
+        },
+        # 4. OpenRouter Gemini 2.5 Flash Image Free
+        {
+            "name": "OpenRouter Gemini 2.5 Flash Image Free",
+            "url": "https://openrouter.ai/api/v1/chat/completions",
+            "key": os.getenv('OPENROUTER_API_KEY'),
+            "model": "google/gemini-2.5-flash-image:free"
         }
     ]
 
