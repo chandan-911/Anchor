@@ -193,25 +193,37 @@ class VoiceTranscribeView(APIView):
             import google.generativeai as genai
             from anchor_project.gemini import GEMINI_API_KEY
             if GEMINI_API_KEY:
-                print(f"[Voice Backend] Attempting transcription via Gemini: raw_mime={raw_mime} -> Gemini mime_type={mime_type}...")
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                response = model.generate_content([
-                    {
-                        "mime_type": mime_type,
-                        "data": audio_bytes
-                    },
-                    transcription_instruction
-                ])
-                
-                try:
-                    transcription = response.text.strip()
-                except Exception:
-                    if response.candidates and len(response.candidates) > 0:
-                        candidate = response.candidates[0]
-                        if candidate.content and candidate.content.parts:
-                            transcription = "".join([part.text for part in candidate.content.parts if hasattr(part, 'text')]).strip()
+                gemini_model_names = [
+                    "gemini-1.5-flash",
+                    "models/gemini-1.5-flash",
+                    "gemini-1.5-pro",
+                    "gemini-pro"
+                ]
+                for m_name in gemini_model_names:
+                    try:
+                        print(f"[Voice Backend] Attempting transcription via Gemini model: {m_name}...")
+                        model = genai.GenerativeModel(m_name)
+                        response = model.generate_content([
+                            {
+                                "mime_type": mime_type,
+                                "data": audio_bytes
+                            },
+                            transcription_instruction
+                        ])
+                        
+                        try:
+                            transcription = response.text.strip()
+                        except Exception:
+                            if response.candidates and len(response.candidates) > 0:
+                                candidate = response.candidates[0]
+                                if candidate.content and candidate.content.parts:
+                                    transcription = "".join([part.text for part in candidate.content.parts if hasattr(part, 'text')]).strip()
+                        if transcription:
+                            break
+                    except Exception as inner_e:
+                        print(f"[Voice Backend] Gemini model {m_name} failed: {inner_e}")
         except Exception as e:
-            print(f"[Voice Backend] Gemini transcription failed: {e}")
+            print(f"[Voice Backend] Gemini transcription outer loop failed: {e}")
             transcription_error = str(e)
 
         # Try 2: Groq Whisper Fallback

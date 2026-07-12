@@ -159,13 +159,7 @@ class JournalOCRView(APIView):
             content_type = content_type.split(';')[0].strip()
 
         try:
-            import google.generativeai as genai
-            from anchor_project.gemini import GEMINI_API_KEY
-            if not GEMINI_API_KEY:
-                return Response({"detail": "Gemini API key is not configured on the server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-            genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            from anchor_project.gemini import query_multimodal_vision
 
             system_instruction = (
                 "You are an expert handwriting transcriber and optical character recognition (OCR) assistant. "
@@ -177,25 +171,10 @@ class JournalOCRView(APIView):
                 "4. Return ONLY the transcribed plain text. Do NOT include any intro notes, tags, summaries, explanations, or markdown code blocks (e.g., do not wrap in ```text or ```)."
             )
 
-            response = model.generate_content([
-                {
-                    "mime_type": content_type,
-                    "data": image_bytes
-                },
-                system_instruction
-            ])
+            transcription = query_multimodal_vision(image_bytes, content_type, system_instruction)
 
-            transcription = ""
-            try:
-                transcription = response.text.strip()
-            except Exception:
-                if response.candidates and len(response.candidates) > 0:
-                    candidate = response.candidates[0]
-                    if candidate.content and candidate.content.parts:
-                        transcription = "".join([part.text for part in candidate.content.parts if hasattr(part, 'text')]).strip()
-
-            if not transcription:
-                return Response({"detail": "Could not extract any text from the diary image. Please make sure the writing is clear and well-lit."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if not transcription or transcription.startswith("Error:"):
+                return Response({"detail": transcription or "Could not extract any text from the diary image. Please make sure the writing is clear and well-lit."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
             return Response({"text": transcription}, status=status.HTTP_200_OK)
 
