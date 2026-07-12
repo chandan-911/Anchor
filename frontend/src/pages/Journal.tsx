@@ -49,6 +49,9 @@ export default function Journal() {
       setCameraStream(stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(playErr => {
+          console.warn("Video play failed or was interrupted", playErr);
+        });
       }
     } catch (err) {
       console.error("Camera access failed", err);
@@ -374,17 +377,19 @@ export default function Journal() {
                 </div>
               ) : null}
 
-              {capturedImage ? (
+              {capturedImage && (
                 <img src={capturedImage} alt="Captured diary" className="w-full h-full object-cover" />
-              ) : cameraStream ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover transform scale-x-[-1]"
-                />
-              ) : (
+              )}
+
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-full object-cover transform scale-x-[-1] ${(capturedImage || !cameraStream) ? 'hidden' : 'block'}`}
+              />
+
+              {!cameraStream && !capturedImage && (
                 <div className="text-center text-xs text-slate-500 space-y-2">
                   <Camera className="w-8 h-8 text-slate-755 mx-auto animate-pulse" />
                   <span>Camera preview loading...</span>
