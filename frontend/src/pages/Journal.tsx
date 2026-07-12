@@ -18,6 +18,7 @@ export default function Journal() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [isMirrored, setIsMirrored] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -67,7 +68,15 @@ export default function Journal() {
       if (context) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
+        
+        context.save();
+        if (isMirrored) {
+          context.translate(canvas.width, 0);
+          context.scale(-1, 1);
+        }
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        context.restore();
+        
         const dataUrl = canvas.toDataURL('image/jpeg');
         setCapturedImage(dataUrl);
         stopCamera();
@@ -386,7 +395,8 @@ export default function Journal() {
                 autoPlay
                 playsInline
                 muted
-                className={`w-full h-full object-cover transform scale-x-[-1] ${(capturedImage || !cameraStream) ? 'hidden' : 'block'}`}
+                style={{ transform: isMirrored ? 'scaleX(-1)' : 'none' }}
+                className={`w-full h-full object-cover ${(capturedImage || !cameraStream) ? 'hidden' : 'block'}`}
               />
 
               {!cameraStream && !capturedImage && (
@@ -433,13 +443,22 @@ export default function Journal() {
                     </button>
                   </>
                 ) : cameraStream ? (
-                  <button
-                    type="button"
-                    onClick={capturePhoto}
-                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
-                  >
-                    Capture Photo
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsMirrored(!isMirrored)}
+                      className="px-3.5 py-2 bg-slate-900 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold hover:text-slate-100 transition-colors"
+                    >
+                      {isMirrored ? 'Unmirror Feed' : 'Mirror Feed'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={capturePhoto}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
+                    >
+                      Capture Photo
+                    </button>
+                  </div>
                 ) : null}
               </div>
             </div>
