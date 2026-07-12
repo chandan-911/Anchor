@@ -30,10 +30,15 @@ export default function Journal() {
   };
 
   useEffect(() => {
-    return () => {
+    if (isCameraOpen) {
+      const timer = setTimeout(() => {
+        startCamera();
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
       stopCamera();
-    };
-  }, [cameraStream]);
+    }
+  }, [isCameraOpen]);
 
   const startCamera = async () => {
     try {
@@ -195,7 +200,7 @@ export default function Journal() {
     <div className="max-w-7xl mx-auto space-y-8 select-none">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+        <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
           <BookOpen className="w-6 h-6 text-indigo-400" /> Daily Reflection Journal
         </h2>
         <p className="text-slate-400 text-xs mt-1">Record your thoughts, emotions, and goals to build long-term AI memory.</p>
@@ -224,8 +229,8 @@ export default function Journal() {
           <div className="glass-card p-6 rounded-3xl">
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Voice & Lang Row */}
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
                   <span className="text-xs text-slate-400 flex items-center gap-1"><Globe className="w-3.5 h-3.5" /> Language</span>
                   <select
                     value={language}
@@ -240,11 +245,11 @@ export default function Journal() {
                   </select>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                   <button
                     type="button"
                     onClick={handleVoiceToggle}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all w-full sm:w-auto justify-center ${
                       isRecording 
                         ? 'bg-rose-600 animate-pulse text-white shadow-lg shadow-rose-600/20' 
                         : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-slate-100'
@@ -258,9 +263,8 @@ export default function Journal() {
                     type="button"
                     onClick={() => {
                       setIsCameraOpen(true);
-                      startCamera();
                     }}
-                    className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+                    className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all w-full sm:w-auto justify-center"
                   >
                     <Camera className="w-3.5 h-3.5 text-indigo-400" />
                     Scan Diary
@@ -340,7 +344,7 @@ export default function Journal() {
       {/* Scan Diary Camera Modal */}
       {isCameraOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-lg rounded-3xl p-6 border border-slate-800 space-y-6 relative flex flex-col">
+          <div className="glass-card w-full max-w-md rounded-3xl p-5 border border-slate-800 space-y-4 relative flex flex-col">
             <button
               type="button"
               onClick={() => {
