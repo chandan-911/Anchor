@@ -140,3 +140,65 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
                     
         serializer.save()
         return Response(serializer.data)
+
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
+
+class JournalOCRView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        image_file = request.FILES.get('image')
+        if not image_file:
+            return Response({"detail": "Image file is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        image_bytes = image_file.read()
+        content_type = image_file.content_type or 'image/jpeg'
+        if ';' in content_type:
+            content_type = content_type.split(';')[0].strip()
+
+        try:
+            import google.generativeai as genai
+            from anchor_project.gemini import GEMINI_API_KEY
+            if not GEMINI_API_KEY:
+                return Response({"detail": "Gemini API key is not configured on the server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            genai.configure(api_key=GEMINI_API_KEY)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+
+            system_instruction = (
+                "You are an expert handwriting transcriber and optical character recognition (OCR) assistant. "
+                "Your goal is to parse the user's handwritten diary page image into clean, legible, and structured text. "
+                "Follow these guidelines:\n"
+                "1. Transcribe the handwriting exactly as written, correcting minor punctuation or spelling spacing where necessary for readability, but keeping the user's authentic thoughts.\n"
+                "2. If some words are blurred or illegible, make your best guess based on surrounding sentence context.\n"
+                "3. Keep any original paragraphs or line-break styling if it matches section thoughts.\n"
+                "4. Return ONLY the transcribed plain text. Do NOT include any intro notes, tags, summaries, explanations, or markdown code blocks (e.g., do not wrap in ```text or ```)."
+            )
+
+            response = model.generate_content([
+                {
+                    "mime_type": content_type,
+                    "data": image_bytes
+                },
+                system_instruction
+            ])
+
+            transcription = ""
+            try:
+                transcription = response.text.strip()
+            except Exception:
+                if response.candidates and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    if candidate.content and candidate.content.parts:
+                        transcription = "".join([part.text for part in candidate.content.parts if hasattr(part, 'text')]).strip()
+
+            if not transcription:
+                return Response({"detail": "Could not extract any text from the diary image. Please make sure the writing is clear and well-lit."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+            return Response({"text": transcription}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            print(f"[Journal OCR] OCR transcription failed: {e}")
+            return Response({"detail": f"Failed to transcribe image: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
-import { BookOpen, Mic, MicOff, Star, AlertTriangle, Battery, Smile, Sparkles, Send, Trash2, Globe } from 'lucide-react';
+import { BookOpen, Mic, MicOff, Star, AlertTriangle, Battery, Smile, Sparkles, Send, Trash2, Globe, Camera, X, Upload, Check } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
 export default function Journal() {
@@ -12,6 +12,95 @@ export default function Journal() {
   const [isRecording, setIsRecording] = useState(false);
   const [recognitionInstance, setRecognitionInstance] = useState<any>(null);
   const [xpReward, setXpReward] = useState<any>(null);
+
+  // Camera & OCR states
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Stop camera when closing/unmounting
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, [cameraStream]);
+
+  const startCamera = async () => {
+    try {
+      setCapturedImage(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera access failed", err);
+      alert("Failed to access camera. Please check permissions or upload an image file instead.");
+    }
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      if (context) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        setCapturedImage(dataUrl);
+        stopCamera();
+      }
+    }
+  };
+
+  const processImageForOCR = async (blob: Blob) => {
+    setOcrLoading(true);
+    const formData = new FormData();
+    formData.append('image', blob, 'diary.jpg');
+    try {
+      const res = await api.post('/journal/ocr/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      const parsedText = res.data.text;
+      setContent(prev => prev + (prev ? '\n\n' : '') + parsedText);
+      setIsCameraOpen(false);
+      setCapturedImage(null);
+    } catch (err: any) {
+      console.error("OCR failed", err);
+      alert(err.response?.data?.detail || "Failed to extract text from the diary image. Please try again with a clearer image.");
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processImageForOCR(file);
+    }
+  };
+
+  const handleConfirmCaptured = () => {
+    if (capturedImage) {
+      fetch(capturedImage)
+        .then(res => res.blob())
+        .then(blob => processImageForOCR(blob));
+    }
+  };
 
   // Fetch past journals
   const { data: journals, isLoading } = useQuery({
@@ -151,18 +240,32 @@ export default function Journal() {
                   </select>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleVoiceToggle}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                    isRecording 
-                      ? 'bg-rose-600 animate-pulse text-white shadow-lg shadow-rose-600/20' 
-                      : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-slate-100'
-                  }`}
-                >
-                  {isRecording ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                  {isRecording ? 'Listening...' : 'Record Voice'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleVoiceToggle}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      isRecording 
+                        ? 'bg-rose-600 animate-pulse text-white shadow-lg shadow-rose-600/20' 
+                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-slate-100'
+                    }`}
+                  >
+                    {isRecording ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                    {isRecording ? 'Listening...' : 'Record Voice'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCameraOpen(true);
+                      startCamera();
+                    }}
+                    className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                    Scan Diary
+                  </button>
+                </div>
               </div>
 
               {/* Journal Textarea */}
@@ -233,6 +336,107 @@ export default function Journal() {
           </div>
         </div>
       </div>
+
+      {/* Scan Diary Camera Modal */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="glass-card w-full max-w-lg rounded-3xl p-6 border border-slate-800 space-y-6 relative flex flex-col">
+            <button
+              type="button"
+              onClick={() => {
+                stopCamera();
+                setIsCameraOpen(false);
+                setCapturedImage(null);
+              }}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-200 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-bold text-white flex items-center justify-center gap-2">
+                <Camera className="w-5 h-5 text-indigo-400" />
+                Scan Handwritten Diary
+              </h3>
+              <p className="text-xs text-slate-400">Position your paper diary page inside the view or upload a photo to transcribe it with AI OCR.</p>
+            </div>
+
+            {/* Video preview / Canvas container */}
+            <div className="relative aspect-video bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex items-center justify-center">
+              {ocrLoading ? (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/60 space-y-3">
+                  <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs text-indigo-300 font-medium tracking-wide">AI is reading handwriting...</span>
+                </div>
+              ) : null}
+
+              {capturedImage ? (
+                <img src={capturedImage} alt="Captured diary" className="w-full h-full object-cover" />
+              ) : cameraStream ? (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover transform scale-x-[-1]"
+                />
+              ) : (
+                <div className="text-center text-xs text-slate-500 space-y-2">
+                  <Camera className="w-8 h-8 text-slate-755 mx-auto animate-pulse" />
+                  <span>Camera preview loading...</span>
+                </div>
+              )}
+              
+              {/* Canvas helper to pull frames */}
+              <canvas ref={canvasRef} className="hidden" />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex gap-4 justify-between items-center">
+              {/* Fallback File Upload Selector */}
+              <label className="flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 text-slate-300 rounded-xl hover:text-slate-100 cursor-pointer text-xs font-semibold transition-colors">
+                <Upload className="w-3.5 h-3.5" />
+                Upload Photo
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                />
+              </label>
+
+              <div className="flex gap-2">
+                {capturedImage ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors"
+                    >
+                      Retake
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmCaptured}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Confirm & Transcribe
+                    </button>
+                  </>
+                ) : cameraStream ? (
+                  <button
+                    type="button"
+                    onClick={capturePhoto}
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
+                  >
+                    Capture Photo
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
